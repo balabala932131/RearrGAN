@@ -86,7 +86,7 @@ class SPADEGenerator(BaseNetwork):
         seg_cut[:, 2, :, :] = seg_cut[:, 0, :, :]
         seg_cut=(seg_cut!=0).float()
 
-        sobel= edge_conv2d(img)*seg_cut  #扣掉sobel中病灶部分的sobel值
+        sobel= edge_conv2d(img)*seg_cut  #黑色病灶是0乘以sobel去病灶，扣掉sobel中病灶部分的sobel值
         seg_zero=torch.zeros_like(seg0)
         # sobel1 = (sobel > 1.0).float()*sobel
 
@@ -96,19 +96,17 @@ class SPADEGenerator(BaseNetwork):
         # sobel4 = (sobel > 0.3).float()*sobel
         # sobel5 = (sobel > 0.1).float()*sobel
         # # #seg = torch.cat((seg0,sobel),1)
-        seg1 = torch.cat((seg0, sobel), 1)
+        seg1 = torch.cat((seg0, sobel), 1)   # 连接sobel和label，在normalization中又分开了
         seg2 = torch.cat((seg0, seg_zero), 1)
         # seg3 = torch.cat((seg0, sobel3), 1)
         # seg4 = torch.cat((seg0, sobel4), 1)
         # seg5 = torch.cat((seg0, sobel5), 1)
 
 
-
         x = randcut(img)
         x = self.encoder(x)
 
         x = self.head_0(x, seg2 )
-
 
         x = self.up(x)
         x = self.G_middle_0(x, seg2 )
