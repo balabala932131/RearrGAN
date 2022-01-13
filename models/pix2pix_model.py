@@ -5,8 +5,10 @@ Licensed under the CC BY-NC-SA 4.0 license (https://creativecommons.org/licenses
 
 import torch
 import models.networks as networks
+import torch.nn.functional as F
 import util.util as util
 from torchvision import utils as vutils
+from util.ssim_loss import SSIM
 
 
 class Pix2PixModel(torch.nn.Module):
@@ -116,18 +118,19 @@ class Pix2PixModel(torch.nn.Module):
 
         # create one-hot label map
         label_map = data['label']
-        # 查看label
-        path = 'image/epoch%.3d_sys.png'
-        vutils.save_image(label_map.float(), path, normalize=True)
+        # # 查看label
+        # path = 'image/epoch%.3d_sys.png'
+        # vutils.save_image(label_map.float(), path, normalize=True)
+        ######
         bs, _, h, w = label_map.size()
         nc = self.opt.label_nc + 1 if self.opt.contain_dontcare_label \
             else self.opt.label_nc
         input_label = self.FloatTensor(bs, nc, h, w).zero_()
         input_semantics = input_label.scatter_(1, label_map, 1.0)
-        # 提取某一层，查看one——hat
-        for i in range(nc):
-            path = 'image/one%.3d_sys.png'%(i)
-            vutils.save_image(input_semantics[:,i,:,:].float(), path, normalize=True)
+        # # 提取某一层，查看one——hat
+        # for i in range(nc):
+        #     path = 'image/one%.3d_sys.png'%(i)
+        #     vutils.save_image(input_semantics[:,i,:,:].float(), path, normalize=True)
         # input_semantics =label_map.float()
 
         # concatenate instance map if it exists
@@ -139,7 +142,6 @@ class Pix2PixModel(torch.nn.Module):
             input_semantics = torch.cat((input_semantics, instance_edge_map), dim=1)
             # input_semantics = inst_map
             # input_semantics = self.FloatTensor((input_semantics*1.0).cpu().numpy())
-
         return input_semantics, data['image']
 
     def compute_generator_loss(self, input_semantics, real_image):
@@ -147,6 +149,8 @@ class Pix2PixModel(torch.nn.Module):
 
         fake_image, KLD_loss = self.generate_fake(
             input_semantics, real_image, compute_kld_loss=self.opt.use_vae)
+
+        G_losses['SSIM'] = self.ssim(fake_image,real_image)
 
         if self.opt.use_vae:
             G_losses['KLD'] = KLD_loss
@@ -223,8 +227,7 @@ class Pix2PixModel(torch.nn.Module):
         # recommended to be in the same batch to avoid disparate
         # statistics in fake and real images.
         # So both fake and real images are fed to D all at once.
-        fake_and_real = torch.cat([fake_concat, real_concat], dim=0)
-
+        fake_and_real = torch.cat([fake_concat, real_concat], dim=0)   # 2,6,256,256
         discriminator_out = self.netD(fake_and_real)
 
         pred_fake, pred_real = self.divide_pred(discriminator_out)
@@ -262,3 +265,18 @@ class Pix2PixModel(torch.nn.Module):
 
     def use_gpu(self):
         return len(self.opt.gpu_ids) > 0
+
+    def ssim(self, input , target):
+        b,c,h,w=input.shape
+        ssim_loss = SSIM(window_size=11)
+        target_tensor = target
+        SL=0
+        num=4
+        L=int(h/num)
+        for i in range(num):
+            for j in range(num):
+                input_i=input[:,:,i*L:(i+1)*L,j*L:(j+1)*L]
+                target_i=target_tensor[:,:,i*L:(i+1)*L,j*L:(j+1)*L]
+                SL_i=ssim_loss(input_i,target_i)
+                SL=SL+SL_i
+        return 1-SL/16
